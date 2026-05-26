@@ -9,9 +9,13 @@ use tracing::debug;
 use crate::contract::{calldata_selector, readMessageCall, writeMessageCall};
 use crate::types::{MailboxCall, MailboxCallType, SimulationState};
 
+// Bounds recursion against pathological RPC responses; deeper traces are
+// truncated rather than risking a stack overflow.
+const MAX_TRACE_DEPTH: usize = 1024;
+
 /// Parse mailbox read/write calls from a geth `callTracer` output.
 ///
-/// Recursively walks the call tree, identifying calls to the mailbox contract
+/// Iteratively walks the call tree, identifying calls to the mailbox contract
 /// by matching function selectors for `writeMessage` and `readMessage`.
 pub fn parse_call_trace(
     trace: &Value,
@@ -19,11 +23,30 @@ pub fn parse_call_trace(
     local_chain_id: ChainId,
 ) -> SimulationState {
     let mut state = SimulationState::default();
-    walk_trace(trace, mailbox_address, local_chain_id, &mut state);
+    let mut stack: Vec<(&Value, usize)> = Vec::with_capacity(16);
+    stack.push((trace, 0));
+
+    while let Some((node, depth)) = stack.pop() {
+        visit_node(node, mailbox_address, local_chain_id, &mut state);
+
+        if depth >= MAX_TRACE_DEPTH {
+            continue;
+        }
+        if let Some(calls) = node.get("calls").and_then(|v| v.as_array()) {
+            // Push in reverse so the leftmost child pops first; preserves the
+            // pre-order DFS the recursive predecessor produced. Trace order
+            // matters because outbound mailbox writes are dispatched to peers
+            // in vector order, and writes that share a dedup key fall under
+            // last-in-wins on the receiver.
+            for child in calls.iter().rev() {
+                stack.push((child, depth + 1));
+            }
+        }
+    }
     state
 }
 
-fn walk_trace(
+fn visit_node(
     node: &Value,
     mailbox_address: Address,
     local_chain_id: ChainId,
@@ -32,31 +55,26 @@ fn walk_trace(
     let from_str = node.get("from").and_then(|v| v.as_str()).unwrap_or("");
     let to_str = node.get("to").and_then(|v| v.as_str()).unwrap_or("");
     let input = node.get("input").and_then(|v| v.as_str()).unwrap_or("");
-    let from_addr = from_str.parse::<Address>().ok();
 
-    if let Ok(to_addr) = to_str.parse::<Address>() {
-        if to_addr == mailbox_address && input.len() >= 10 {
-            let selector = calldata_selector(input);
+    let Ok(to_addr) = to_str.parse::<Address>() else {
+        return;
+    };
+    if to_addr != mailbox_address || input.len() < 10 {
+        return;
+    }
+    let selector = calldata_selector(input);
 
-            if selector == Some(writeMessageCall::SELECTOR) {
-                if let Some(caller) = from_addr {
-                    if let Some(call) = decode_write(input, caller, local_chain_id) {
-                        debug!(label = %call.label, "Parsed mailbox writeMessage call");
-                        state.writes.push(call);
-                    }
-                }
-            } else if selector == Some(readMessageCall::SELECTOR) {
-                if let Some(call) = decode_read(input, local_chain_id) {
-                    debug!(label = %call.label, "Parsed mailbox readMessage call");
-                    state.reads.push(call);
-                }
+    if selector == Some(writeMessageCall::SELECTOR) {
+        if let Ok(caller) = from_str.parse::<Address>() {
+            if let Some(call) = decode_write(input, caller, local_chain_id) {
+                debug!(label = %call.label, "Parsed mailbox writeMessage call");
+                state.writes.push(call);
             }
         }
-    }
-
-    if let Some(calls) = node.get("calls").and_then(|v| v.as_array()) {
-        for child in calls {
-            walk_trace(child, mailbox_address, local_chain_id, state);
+    } else if selector == Some(readMessageCall::SELECTOR) {
+        if let Some(call) = decode_read(input, local_chain_id) {
+            debug!(label = %call.label, "Parsed mailbox readMessage call");
+            state.reads.push(call);
         }
     }
 }
@@ -321,5 +339,58 @@ mod tests {
         let parsed = parse_call_trace(&trace, mailbox, ChainId(88888));
         assert_eq!(parsed.reads.len(), 0);
         assert_eq!(parsed.writes.len(), 0);
+    }
+
+    #[test]
+    fn preserves_call_order_across_nested_children() {
+        let mailbox: Address = "0xe5d5d610fb9767df117f4076444b45404201a097"
+            .parse()
+            .unwrap();
+        let caller: Address = "0xf5fe1b951c5cdf2d4299f8e63444ff621cd2fed9"
+            .parse()
+            .unwrap();
+        let receiver: Address = "0x4bcf3d44f2531497e82be4556f380b0a414aa9ce"
+            .parse()
+            .unwrap();
+        let session_id = U256::from(1u64);
+
+        let write_a = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": make_write_calldata(88888, caller, receiver, session_id, "A", b"a"),
+        });
+        let write_b = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": make_write_calldata(88888, caller, receiver, session_id, "B", b"b"),
+            "calls": [
+                {
+                    "from": format!("{caller:#x}"),
+                    "to": format!("{mailbox:#x}"),
+                    "input": make_write_calldata(88888, caller, receiver, session_id, "B1", b"b1"),
+                },
+                {
+                    "from": format!("{caller:#x}"),
+                    "to": format!("{mailbox:#x}"),
+                    "input": make_write_calldata(88888, caller, receiver, session_id, "B2", b"b2"),
+                },
+            ],
+        });
+        let write_c = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{mailbox:#x}"),
+            "input": make_write_calldata(88888, caller, receiver, session_id, "C", b"c"),
+        });
+
+        let trace = json!({
+            "from": format!("{caller:#x}"),
+            "to": format!("{caller:#x}"),
+            "input": "0x",
+            "calls": [write_a, write_b, write_c],
+        });
+
+        let parsed = parse_call_trace(&trace, mailbox, ChainId(77777));
+        let labels: Vec<&str> = parsed.writes.iter().map(|w| w.label.as_str()).collect();
+        assert_eq!(labels, vec!["A", "B", "B1", "B2", "C"]);
     }
 }
