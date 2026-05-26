@@ -19,7 +19,7 @@ const PUT_INBOX_GAS_LIMIT: u64 = 2_000_000;
 #[derive(Clone)]
 pub struct PutInboxTxBuilder {
     chain_id: ChainId,
-    rpc_url: String,
+    rpc_url: Url,
     provider: DynProvider,
     mailbox_address: Address,
     signer: PrivateKeySigner,
@@ -65,7 +65,7 @@ impl PutInboxTxBuilder {
 
         Ok(Self {
             chain_id,
-            rpc_url: rpc_url.to_string(),
+            rpc_url,
             provider,
             mailbox_address,
             signer,
@@ -80,12 +80,15 @@ impl PutInboxBuilder for PutInboxTxBuilder {
         self.signer_address
     }
 
-    async fn canonical_nonce_at(&self) -> Result<u64, CoordinatorError> {
+    async fn signer_nonce_floor(&self) -> Result<u64, CoordinatorError> {
+        // `pending` includes the builder's flashblock state; `latest` lags it
+        // by up to a block and would let an already-executed putInbox tx slip
+        // past the nonce floor.
         self.provider
             .get_transaction_count(self.signer_address)
-            .block_id(BlockId::latest())
+            .block_id(BlockId::pending())
             .await
-            .map_err(|e| CoordinatorError::Nonce(format!("get canonical nonce: {e}")))
+            .map_err(|e| CoordinatorError::Nonce(format!("get pending nonce: {e}")))
     }
 
     async fn build_put_inbox_tx_with_nonce(
@@ -113,13 +116,9 @@ impl PutInboxBuilder for PutInboxTxBuilder {
             .gas_limit(PUT_INBOX_GAS_LIMIT)
             .with_input(calldata);
 
-        let rpc_url: Url = self
-            .rpc_url
-            .parse()
-            .map_err(|e| CoordinatorError::Other(format!("invalid builder rpc url: {e}")))?;
         let provider = ProviderBuilder::new()
             .wallet(self.signer.clone())
-            .connect_http(rpc_url);
+            .connect_http(self.rpc_url.clone());
         let signed = provider
             .fill(tx)
             .await
