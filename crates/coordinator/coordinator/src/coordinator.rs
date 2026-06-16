@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use compose_mailbox::traits::MailboxQueue;
 use compose_peer::traits::PeerCoordinator;
-use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber, SuperblockNumber};
+use compose_primitives::InstanceId;
 use compose_simulation::traits::Simulator;
+use ethera_spec::{ChainId, SequenceNumber};
 use prost::Message;
 use reqwest::Client;
 use tokio::sync::{oneshot, Notify, RwLock};
@@ -18,10 +19,11 @@ use compose_metrics::SidecarMetrics;
 use compose_primitives_traits::{
     CoordinatorError, MailboxSender, PublisherClient, PutInboxBuilder, XtBuilderClient,
 };
-use compose_proto::{wire_message::Payload, MailboxMessage};
+use ethera_spec_proto::{MailboxMessage, Payload};
 
 use crate::model::chain_overlay::ChainOverlay;
 use crate::model::pending_xt::PendingXt;
+use crate::model::publisher_period::PublisherPeriod;
 use crate::model::xt_status::{determine_xt_status, XtStatusResponse};
 use crate::nonce_manager::DeferredNonceManager;
 use crate::pipeline::delivery::build_sender_nonce_cache;
@@ -42,10 +44,8 @@ pub struct VerificationConfig {
 #[derive(Debug)]
 pub(crate) struct CoordinatorState {
     pub pending: HashMap<InstanceId, PendingXt>,
-    pub current_period_id: PeriodId,
-    pub current_superblock_num: SuperblockNumber,
-    pub period_initialized: bool,
-    pub last_sequence_num: SequenceNumber,
+    /// Publisher period and per-period `StartInstance` ordering state.
+    pub publisher_period: PublisherPeriod,
     pub last_known_blocks: HashMap<ChainId, u64>,
     /// Monotonic counter for locally-originated XTs in standalone mode.
     pub origin_seq: SequenceNumber,
@@ -82,10 +82,7 @@ impl CoordinatorState {
     fn new() -> Self {
         Self {
             pending: HashMap::new(),
-            current_period_id: PeriodId(0),
-            current_superblock_num: SuperblockNumber(0),
-            period_initialized: false,
-            last_sequence_num: SequenceNumber(0),
+            publisher_period: PublisherPeriod::default(),
             last_known_blocks: HashMap::new(),
             origin_seq: SequenceNumber(0),
             chain_overlay: HashMap::new(),
@@ -250,20 +247,21 @@ impl DefaultCoordinator {
     pub async fn cleanup(&self, max_age: Duration) {
         let mut state = self.state.write().await;
         let now = std::time::Instant::now();
-        let mut new_mailbox_index = HashMap::with_capacity(state.pending.len());
+        let mut removed_raw_ids = Vec::new();
         state.pending.retain(|_id, xt| {
-            let age_ref = xt.confirmed_at.or(xt.decided_at);
-            let keep = if let Some(t) = age_ref {
-                now.duration_since(t) <= max_age
-            } else {
-                true
-            };
-            if keep {
-                new_mailbox_index.insert(xt.instance_id.clone(), xt.id.clone());
+            let keep = xt
+                .confirmed_at
+                .or(xt.decided_at)
+                .is_none_or(|t| now.duration_since(t) <= max_age);
+            if !keep {
+                // The XT is dropped by retain, so steal the key instead of cloning.
+                removed_raw_ids.push(std::mem::take(&mut xt.instance_id));
             }
             keep
         });
-        state.mailbox_index = new_mailbox_index;
+        for raw_id in &removed_raw_ids {
+            state.mailbox_index.remove(raw_id);
+        }
         let stale_fps: Vec<String> = state
             .submitted_fingerprints
             .iter()
@@ -402,9 +400,9 @@ impl DefaultCoordinator {
 
     /// Submit a cross-chain transaction.
     ///
-    /// In publisher-connected mode, the XT is encoded as an `XtRequest` protobuf
-    /// and sent to the publisher, which assigns the instance ID. In standalone
-    /// mode, a local ID is generated and the XT is forwarded to peer sidecars.
+    /// In publisher-connected mode, the XT is sent to the publisher, which
+    /// assigns the instance ID. In standalone mode, a local ID is generated and
+    /// the XT is forwarded to peer sidecars.
     pub async fn submit_xt(
         &self,
         txs: HashMap<ChainId, Vec<Vec<u8>>>,
@@ -450,9 +448,10 @@ impl DefaultCoordinator {
         };
 
         if should_send {
-            let wire = compose_proto::WireMessage {
+            let wire_xt_request = ethera_spec_proto::XtRequest::from(&xt_request);
+            let wire = ethera_spec_proto::Message {
                 sender_id: String::new(),
-                payload: Some(Payload::XtRequest(xt_request)),
+                payload: Some(Payload::XtRequest(wire_xt_request)),
             };
             let data = wire.encode_to_vec();
 
@@ -599,6 +598,7 @@ impl DefaultCoordinator {
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use ethera_spec::PeriodId;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
