@@ -77,6 +77,12 @@ impl DefaultCoordinator {
             return;
         }
 
+        if let Err(reason) = self.check_xt_permissions(instance_id, &tx_bytes_list).await {
+            warn!(instance_id, reason, "Permission check rejected XT");
+            let _ = self.send_vote(instance_id, false).await;
+            return;
+        }
+
         // Lock the local chain.
         {
             let mut state = self.state.write().await;
@@ -289,6 +295,43 @@ impl DefaultCoordinator {
             ?payload,
             "Verification hook approved XT"
         );
+
+        Ok(())
+    }
+
+    /// Enforce peer-chain permissions before the local vote is emitted.
+    ///
+    /// Resolves the sender for each local transaction and rejects the instance
+    /// if its policy disallows any participating peer chain.
+    async fn check_xt_permissions(
+        &self,
+        instance_id: &str,
+        local_txs: &[Vec<u8>],
+    ) -> Result<(), &'static str> {
+        let Some(engine) = &self.permission_engine else {
+            return Ok(());
+        };
+
+        let involved: Vec<ChainId> = {
+            let state = self.state.read().await;
+            match state.pending.get(instance_id) {
+                Some(xt) => xt.raw_txs.keys().copied().collect(),
+                None => return Ok(()),
+            }
+        };
+
+        for tx in local_txs {
+            // The policy cannot be evaluated without the sender, so the
+            // instance is rejected.
+            let Some((sender, _)) = crate::pipeline::delivery::decode_sender_nonce(tx) else {
+                return Err("sender recovery failed");
+            };
+            if let ethera_permissions::Decision::Deny(reason) =
+                engine.evaluate_xt(sender, self.chain_id, &involved)
+            {
+                return Err(reason.as_str());
+            }
+        }
 
         Ok(())
     }
