@@ -447,7 +447,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -614,7 +614,7 @@ checksum = "aa501ad58dd20acddbfebc65b52e60f05ebf97c52fa40d1b35e91f5e2da0ad0e"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "reqwest",
  "serde_json",
  "tower",
@@ -714,6 +714,15 @@ name = "anyhow"
 version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+
+[[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
 
 [[package]]
 name = "ark-ff"
@@ -1284,190 +1293,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compose-config"
-version = "0.1.0"
-dependencies = [
- "clap",
- "compose-primitives",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "compose-coordinator"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "async-trait",
- "axum",
- "compose-mailbox",
- "compose-metrics",
- "compose-peer",
- "compose-primitives",
- "compose-primitives-traits",
- "compose-proto",
- "compose-simulation",
- "hex",
- "prost",
- "reqwest",
- "serde",
- "sha2",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "compose-mailbox"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "async-trait",
- "compose-primitives",
- "compose-primitives-traits",
- "compose-proto",
- "hex",
- "reqwest",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "compose-metrics"
-version = "0.1.0"
-dependencies = [
- "prometheus-client",
-]
-
-[[package]]
-name = "compose-peer"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "compose-primitives",
- "compose-primitives-traits",
- "compose-proto",
- "futures",
- "hex",
- "prost",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "compose-primitives"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "hex",
- "serde",
- "sha2",
-]
-
-[[package]]
-name = "compose-primitives-traits"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "async-trait",
- "compose-primitives",
- "compose-proto",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "compose-proto"
-version = "0.1.0"
-dependencies = [
- "compose-primitives",
- "hex",
- "prost",
-]
-
-[[package]]
-name = "compose-publisher"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "compose-primitives",
- "compose-primitives-traits",
- "compose-proto",
- "compose-transport",
- "prost",
-]
-
-[[package]]
-name = "compose-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "bytes",
- "compose-coordinator",
- "compose-peer",
- "compose-primitives",
- "compose-proto",
- "hex",
- "prometheus-client",
- "prost",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tower-http",
- "tracing",
-]
-
-[[package]]
-name = "compose-simulation"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-rpc-types-eth",
- "alloy-rpc-types-trace",
- "async-trait",
- "compose-mailbox",
- "compose-primitives",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "compose-tracing"
-version = "0.1.0"
-dependencies = [
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "compose-transport"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "prost",
- "quinn",
- "rcgen",
- "rustls",
- "socket2 0.5.10",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "const-hex"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1673,6 +1498,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-encoding"
+version = "2.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1866,6 +1697,23 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "ethera-spec"
+version = "0.1.0"
+source = "git+https://github.com/ethera-labs/specs.git?branch=feat%2Fcompose-rs#f41a8189b2121737e16c234be951fcd8b58bedf6"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "ethera-spec-proto"
+version = "0.1.0"
+source = "git+https://github.com/ethera-labs/specs.git?branch=feat%2Fcompose-rs#f41a8189b2121737e16c234be951fcd8b58bedf6"
+dependencies = [
+ "ethera-spec",
+ "prost",
 ]
 
 [[package]]
@@ -2530,15 +2378,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3100,7 +2939,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -3821,6 +3660,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3873,18 +3723,226 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
- "compose-config",
- "compose-coordinator",
- "compose-mailbox",
- "compose-metrics",
- "compose-peer",
- "compose-publisher",
- "compose-server",
- "compose-simulation",
- "compose-tracing",
- "compose-transport",
  "prometheus-client",
+ "sidecar-config",
+ "sidecar-coordinator",
+ "sidecar-mailbox",
+ "sidecar-metrics",
+ "sidecar-peer",
+ "sidecar-permissions",
+ "sidecar-publisher",
+ "sidecar-server",
+ "sidecar-simulation",
+ "sidecar-tracing",
+ "sidecar-transport",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-config"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ethera-spec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sidecar-coordinator"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "async-trait",
+ "axum",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "hex",
+ "prost",
+ "reqwest",
+ "serde",
+ "sha2",
+ "sidecar-mailbox",
+ "sidecar-metrics",
+ "sidecar-peer",
+ "sidecar-permissions",
+ "sidecar-primitives",
+ "sidecar-primitives-traits",
+ "sidecar-simulation",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-mailbox"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "async-trait",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "hex",
+ "reqwest",
+ "serde_json",
+ "sidecar-primitives",
+ "sidecar-primitives-traits",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-metrics"
+version = "0.1.0"
+dependencies = [
+ "prometheus-client",
+]
+
+[[package]]
+name = "sidecar-peer"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "futures",
+ "hex",
+ "prost",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sidecar-primitives-traits",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-permissions"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "arc-swap",
+ "ethera-spec",
+ "serde",
+ "serde_json",
+ "sidecar-ws",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-primitives"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "ethera-spec",
+ "hex",
+ "serde",
+ "sha2",
+]
+
+[[package]]
+name = "sidecar-primitives-traits"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "sidecar-primitives",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sidecar-publisher"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "prost",
+ "sidecar-primitives-traits",
+ "sidecar-transport",
+]
+
+[[package]]
+name = "sidecar-server"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "axum",
+ "bytes",
+ "ethera-spec",
+ "ethera-spec-proto",
+ "hex",
+ "prometheus-client",
+ "prost",
+ "serde",
+ "serde_json",
+ "sidecar-coordinator",
+ "sidecar-peer",
+ "sidecar-permissions",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-simulation"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
+ "async-trait",
+ "ethera-spec",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sidecar-mailbox",
+ "sidecar-primitives",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-tracing"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "sidecar-transport"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "prost",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "socket2 0.5.10",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sidecar-ws"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "tokio",
+ "tokio-tungstenite",
  "tracing",
 ]
 
@@ -4241,6 +4299,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4413,6 +4487,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
+name = "tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.8.5",
+ "rustls",
+ "rustls-pki-types",
+ "sha1",
+ "thiserror 1.0.69",
+ "utf-8",
+]
+
+[[package]]
 name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4478,6 +4572,12 @@ dependencies = [
  "serde",
  "serde_derive",
 ]
+
+[[package]]
+name = "utf-8"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8_iter"

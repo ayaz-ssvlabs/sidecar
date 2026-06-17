@@ -1,10 +1,10 @@
 //! Start-period handling and period state transitions.
 
-use compose_primitives::{PeriodId, SuperblockNumber};
+use ethera_spec::{PeriodId, SuperblockNumber};
 use tracing::{error, info};
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Handle a new period from the publisher. Aborts any stale undecided
@@ -43,10 +43,7 @@ impl DefaultCoordinator {
                 }
             }
 
-            state.current_period_id = period_id;
-            state.current_superblock_num = superblock_num;
-            state.period_initialized = true;
-            state.last_sequence_num = Default::default();
+            state.publisher_period.start(period_id);
             state.last_known_blocks.clear();
             state.chain_overlay.clear();
 
@@ -87,7 +84,7 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::ChainId;
+    use ethera_spec::ChainId;
 
     use super::*;
     use crate::coordinator::VerificationConfig;

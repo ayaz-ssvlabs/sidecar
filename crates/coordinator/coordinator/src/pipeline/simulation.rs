@@ -2,14 +2,15 @@
 
 use std::time::{Duration, Instant as StdInstant};
 
-use compose_mailbox::matching::{
+use ethera_spec::ChainId;
+use ethera_spec_proto::MailboxMessage;
+use serde::Serialize;
+use sidecar_mailbox::matching::{
     contains_message, dependency_keys_equal, matches_dependency, DependencyKey, MailboxMessageKey,
 };
-use compose_mailbox::overrides::merge_overrides;
-use compose_mailbox::wire;
-use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage, StateOverride};
-use compose_proto::MailboxMessage;
-use serde::Serialize;
+use sidecar_mailbox::overrides::merge_overrides;
+use sidecar_mailbox::wire;
+use sidecar_primitives::{CrossRollupDependency, CrossRollupMessage, StateOverride};
 use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -72,6 +73,12 @@ impl DefaultCoordinator {
 
         if let Err(err) = self.verify_xt(instance_id, &tx_bytes_list).await {
             warn!(instance_id, error = %err, "Verification hook rejected XT");
+            let _ = self.send_vote(instance_id, false).await;
+            return;
+        }
+
+        if let Err(reason) = self.check_xt_permissions(instance_id, &tx_bytes_list).await {
+            warn!(instance_id, reason, "Permission check rejected XT");
             let _ = self.send_vote(instance_id, false).await;
             return;
         }
@@ -292,13 +299,50 @@ impl DefaultCoordinator {
         Ok(())
     }
 
+    /// Enforce peer-chain permissions before the local vote is emitted.
+    ///
+    /// Resolves the sender for each local transaction and rejects the instance
+    /// if its policy disallows any participating peer chain.
+    async fn check_xt_permissions(
+        &self,
+        instance_id: &str,
+        local_txs: &[Vec<u8>],
+    ) -> Result<(), &'static str> {
+        let Some(engine) = &self.permission_engine else {
+            return Ok(());
+        };
+
+        let involved: Vec<ChainId> = {
+            let state = self.state.read().await;
+            match state.pending.get(instance_id) {
+                Some(xt) => xt.raw_txs.keys().copied().collect(),
+                None => return Ok(()),
+            }
+        };
+
+        for tx in local_txs {
+            // The policy cannot be evaluated without the sender, so the
+            // instance is rejected.
+            let Some((sender, _)) = crate::pipeline::delivery::decode_sender_nonce(tx) else {
+                return Err("sender recovery failed");
+            };
+            if let sidecar_permissions::Decision::Deny(reason) =
+                engine.evaluate_xt(sender, self.chain_id, &involved)
+            {
+                return Err(reason.as_str());
+            }
+        }
+
+        Ok(())
+    }
+
     /// Record simulation results into XT state, update the chain overlay with
     /// the post-simulation overrides so subsequent XTs see the committed state,
     /// and return the overrides for the next simulation step.
     async fn record_simulation_state(
         &self,
         instance_id: &str,
-        result: &compose_primitives::SimulationResult,
+        result: &sidecar_primitives::SimulationResult,
         base_overrides: &StateOverride,
     ) -> StateOverride {
         let mut state = self.state.write().await;
@@ -440,7 +484,7 @@ impl DefaultCoordinator {
         &self,
         instance_id: &str,
         outbound_messages: &[CrossRollupMessage],
-    ) -> Result<(), compose_primitives_traits::CoordinatorError> {
+    ) -> Result<(), sidecar_primitives_traits::CoordinatorError> {
         if outbound_messages.is_empty() {
             return Ok(());
         }
@@ -497,7 +541,7 @@ impl DefaultCoordinator {
         &self,
         instance_id: &str,
         vote: bool,
-    ) -> Result<(), compose_primitives_traits::CoordinatorError> {
+    ) -> Result<(), sidecar_primitives_traits::CoordinatorError> {
         let standalone_mode = !self.is_publisher_connected().await;
         let mut decision_made: Option<(bool, usize, usize)> = None;
         let mut builder_command = None;
@@ -605,12 +649,12 @@ mod tests {
     use alloy_rpc_types_eth::state::AccountOverride;
     use async_trait::async_trait;
     use axum::{extract::State, http::StatusCode, routing::post, Router};
-    use compose_mailbox::wire;
-    use compose_primitives::ChainId;
-    use compose_primitives::StateOverride;
-    use compose_primitives::{CrossRollupDependency, SimulationResult};
-    use compose_simulation::error::SimulationError;
-    use compose_simulation::traits::Simulator;
+    use ethera_spec::ChainId;
+    use sidecar_mailbox::wire;
+    use sidecar_primitives::StateOverride;
+    use sidecar_primitives::{CrossRollupDependency, SimulationResult};
+    use sidecar_simulation::error::SimulationError;
+    use sidecar_simulation::traits::Simulator;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tokio::{net::TcpListener, task::JoinHandle};
@@ -1110,7 +1154,7 @@ mod tests {
 
             let mut xt = PendingXt::new("xt-77777-13".to_string(), b"xt-77777-13".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
-            xt.pending_mailbox.push(compose_proto::MailboxMessage {
+            xt.pending_mailbox.push(ethera_spec_proto::MailboxMessage {
                 source_chain: 88888,
                 destination_chain: 77777,
                 sender: Address::repeat_byte(0x33).as_slice().to_vec(),
@@ -1167,7 +1211,7 @@ mod tests {
             let mut state = coordinator.state.write().await;
             let mut xt = PendingXt::new("xt-77777-14".to_string(), b"xt-77777-14".to_vec());
             xt.raw_txs.insert(ChainId(77777), vec![vec![0xab, 0xcd]]);
-            xt.pending_mailbox.push(compose_proto::MailboxMessage {
+            xt.pending_mailbox.push(ethera_spec_proto::MailboxMessage {
                 source_chain: 88888,
                 destination_chain: 77777,
                 sender: Address::repeat_byte(0x33).as_slice().to_vec(),

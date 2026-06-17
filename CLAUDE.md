@@ -24,14 +24,13 @@ just ci-full        # ci + cargo-deny + cargo-machete
 just run [ARGS]     # cargo run -p sidecar -- [ARGS]
 just release        # cargo build --release -p sidecar
 just doc            # cargo doc --workspace --no-deps --open
-just proto          # regenerate protobuf code (cargo build -p compose-proto)
 ```
 
 Run a single test:
 
 ```sh
 cargo test -p <crate-name> <test_name>
-# e.g.: cargo test -p compose-coordinator submission
+# e.g.: cargo test -p sidecar-coordinator submission
 ```
 
 Install optional dev tools before running `ci-full`:
@@ -51,15 +50,14 @@ just install-hooks  # installs pre-commit hooks (requires: pip install pre-commi
 
 ## Architecture
 
-The workspace contains one binary and many library crates, all prefixed `compose-*`:
+The workspace contains one binary and many library crates, all prefixed `sidecar-*`:
 
 ```
 bin/sidecar              - binary entrypoint: wires up all crates and starts HTTP + QUIC
 crates/
-  primitives             - shared data types (ChainId, XtRequest, PeriodId, etc.)
+  primitives             - sidecar-specific data types (InstanceId, XtStatus, CrossRollup*)
   primitives-traits      - integration boundary traits and coordinator error types
   config                 - clap CLI args + env-var config (SIDECAR_* prefix)
-  proto                  - protobuf wire types + conversions (prost, rollup_v2)
   coordinator/
     coordinator          - core XT state machine: submission → simulation → voting → decision → builder sync
     server               - axum HTTP API (see routes below)
@@ -67,7 +65,9 @@ crates/
     transport            - QUIC client/server, TLS (quinn + rustls + rcgen), framing
     publisher            - wraps QuicClient for SP communication
     peer                 - HTTP client for sidecar-to-sidecar coordination
+    ws                   - generic reconnecting websocket subscriber (TLS, auth, backoff)
   mailbox               - UniversalBridgeMailbox ABI helpers, dependency matching, overrides, and in-memory queue
+  permissions            - entity permission engine and config-stream consumer
   simulation             - RPC-backed tx simulation (eth_call with state overrides)
   metrics                - Prometheus counters/histograms via prometheus-client
   tracing                - tracing-subscriber init (JSON or pretty output)
@@ -98,8 +98,9 @@ crates/
 
 ### Publisher (QUIC / SP)
 
-The sidecar optionally connects to a Shared Publisher (SP) via QUIC (`compose-transport`). Messages are length-prefixed
-protobuf frames (`compose-proto`). The SP pushes start-period and start-instance messages that drive the coordinator
+The sidecar optionally connects to a Shared Publisher (SP) via QUIC (`sidecar-transport`). Messages are length-prefixed
+protobuf frames (`ethera-spec-proto`, the canonical wire format shared with the publisher). The SP pushes start-period
+and start-instance messages that drive the coordinator
 state machine.
 
 ### Configuration

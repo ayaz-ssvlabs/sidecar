@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use axum::extract::{Path, State};
 use axum::Json;
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ServerError;
@@ -59,7 +59,7 @@ pub async fn handle_submit_xt(
 pub async fn handle_get_xt_status(
     State(state): State<AppState>,
     Path(instance_id): Path<String>,
-) -> Result<Json<compose_coordinator::model::xt_status::XtStatusResponse>, ServerError> {
+) -> Result<Json<sidecar_coordinator::model::xt_status::XtStatusResponse>, ServerError> {
     let resp = state.coordinator.get_xt_status(&instance_id).await?;
     Ok(Json(resp))
 }

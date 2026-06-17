@@ -2,10 +2,10 @@
 
 use axum::extract::State;
 use axum::Json;
-use compose_peer::types::{VoteRequest, XtForwardRequest};
-use compose_primitives::{ChainId, SequenceNumber};
-use compose_proto::MailboxMessage;
+use ethera_spec::{ChainId, SequenceNumber};
+use ethera_spec_proto::MailboxMessage;
 use prost::Message;
+use sidecar_peer::types::{VoteRequest, XtForwardRequest};
 
 use crate::error::ServerError;
 use crate::state::AppState;

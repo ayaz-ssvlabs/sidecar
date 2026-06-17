@@ -5,25 +5,26 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
-use compose_config::SidecarArgs;
-use compose_coordinator::builder::CoordinatorBuilder;
-use compose_coordinator::builder_client::HttpXtBuilderClient;
-use compose_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
-use compose_mailbox::put_inbox::PutInboxTxBuilder;
-use compose_mailbox::queue::InMemoryQueue;
-use compose_metrics::SidecarMetrics;
-use compose_peer::coordinator::{HttpPeerCoordinator, PeerEntry as RuntimePeerEntry};
-use compose_peer::sender::PeerMailboxSender;
-use compose_publisher::PublisherConnection;
-use compose_server::handlers::publisher::handle_publisher_message;
-use compose_server::router::build_router;
-use compose_server::state::AppState;
-use compose_simulation::rpc::RpcSimulator;
-use compose_simulation::types::ChainRpcConfig;
-use compose_transport::client::QuicClient;
-use compose_transport::config::ClientConfig;
-use compose_transport::traits::Transport;
 use prometheus_client::registry::Registry;
+use sidecar_config::SidecarArgs;
+use sidecar_coordinator::builder::CoordinatorBuilder;
+use sidecar_coordinator::builder_client::HttpXtBuilderClient;
+use sidecar_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
+use sidecar_mailbox::put_inbox::PutInboxTxBuilder;
+use sidecar_mailbox::queue::InMemoryQueue;
+use sidecar_metrics::SidecarMetrics;
+use sidecar_peer::coordinator::{HttpPeerCoordinator, PeerEntry as RuntimePeerEntry};
+use sidecar_peer::sender::PeerMailboxSender;
+use sidecar_permissions::{ConfigStream, PermissionEngine};
+use sidecar_publisher::PublisherConnection;
+use sidecar_server::handlers::publisher::handle_publisher_message;
+use sidecar_server::router::build_router;
+use sidecar_server::state::AppState;
+use sidecar_simulation::rpc::RpcSimulator;
+use sidecar_simulation::types::ChainRpcConfig;
+use sidecar_transport::client::QuicClient;
+use sidecar_transport::config::ClientConfig;
+use sidecar_transport::traits::Transport;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
@@ -31,14 +32,16 @@ use tracing::{error, info, warn};
 async fn main() -> Result<()> {
     let args = SidecarArgs::parse();
 
-    compose_tracing::init(&args.log.level, &args.log.format);
+    sidecar_tracing::init(&args.log.level, &args.log.format);
 
     info!("Starting sidecar");
 
     let mut registry = Registry::default();
     let metrics = Arc::new(SidecarMetrics::new(&mut registry));
 
-    let (coordinator, quic_client) = build_coordinator(&args, metrics)?;
+    let permission_engine = build_permission_engine(&args)?;
+
+    let (coordinator, quic_client) = build_coordinator(&args, metrics, permission_engine.clone())?;
 
     coordinator.start().await?;
 
@@ -48,7 +51,20 @@ async fn main() -> Result<()> {
         spawn_publisher_connection(coordinator_arc.clone(), client);
     }
 
-    let state = AppState::from_arc(coordinator_arc).with_registry(registry);
+    if let Some(engine) = &permission_engine {
+        let stream = ConfigStream::new(
+            args.permissions.config_ws_url.clone(),
+            args.permissions.auth_token(),
+            engine.clone(),
+        );
+        info!(url = %args.permissions.config_ws_url, "Starting permission config stream");
+        tokio::spawn(stream.run());
+    }
+
+    let mut state = AppState::from_arc(coordinator_arc).with_registry(registry);
+    if let Some(engine) = permission_engine {
+        state = state.with_permission_engine(engine);
+    }
     let router = build_router(state);
 
     let listener = TcpListener::bind(&args.server.listen_addr).await?;
@@ -62,13 +78,31 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Builds the permission engine when enforcement is enabled.
+///
+/// A stream URL is required so the engine can receive policy snapshots before
+/// serving permission decisions.
+fn build_permission_engine(args: &SidecarArgs) -> Result<Option<PermissionEngine>> {
+    if !args.permissions.enabled {
+        return Ok(None);
+    }
+    if args.permissions.config_ws_url.trim().is_empty() {
+        anyhow::bail!("permissions.enabled requires permissions.config-ws-url");
+    }
+    Ok(Some(PermissionEngine::new(true)))
+}
+
 fn build_coordinator(
     args: &SidecarArgs,
     metrics: Arc<SidecarMetrics>,
+    permission_engine: Option<PermissionEngine>,
 ) -> Result<(DefaultCoordinator, Option<Arc<QuicClient>>)> {
     let chain_id = args.chain.chain_id();
 
     let mut builder = CoordinatorBuilder::new(chain_id).metrics(metrics);
+    if let Some(engine) = permission_engine {
+        builder = builder.permission_engine(engine);
+    }
     let chain_rpc = &args.chain.rpc;
     let builder_rpc = args.chain.builder_rpc_url();
     if !builder_rpc.is_empty() {

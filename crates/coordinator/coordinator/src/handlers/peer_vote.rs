@@ -1,10 +1,10 @@
 //! Peer vote intake and standalone decision aggregation.
 
-use compose_primitives::ChainId;
+use ethera_spec::ChainId;
 use tracing::info;
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Process a vote received from a peer sidecar.
@@ -79,7 +79,7 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::ChainId;
+    use ethera_spec::ChainId;
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;

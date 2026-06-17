@@ -1,10 +1,10 @@
 //! Rollback handling for aborting undecided instances.
 
-use compose_primitives::{PeriodId, SuperblockNumber};
+use ethera_spec::PeriodId;
 use tracing::warn;
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Abort all pending local builder reservations and reset period state.
@@ -30,10 +30,7 @@ impl DefaultCoordinator {
             }
         }
 
-        state.period_initialized = false;
-        state.current_period_id = period_id;
-        state.current_superblock_num = SuperblockNumber(last_finalized_superblock_num + 1);
-        state.last_sequence_num = Default::default();
+        state.publisher_period.close();
         state.last_known_blocks.clear();
         state.chain_overlay.clear();
         state.mailbox_buffer.clear();
@@ -75,12 +72,12 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::{ChainId, PeriodId, SuperblockNumber};
+    use ethera_spec::{ChainId, PeriodId};
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
     #[tokio::test]
-    async fn handle_rollback_updates_period_and_superblock() {
+    async fn handle_rollback_closes_period() {
         let coordinator = DefaultCoordinator::new(
             ChainId(77777),
             None,
@@ -92,12 +89,9 @@ mod tests {
             VerificationConfig::default(),
         );
 
-        // Set initial state.
         {
             let mut state = coordinator.state.write().await;
-            state.current_period_id = PeriodId(10);
-            state.current_superblock_num = SuperblockNumber(100);
-            state.period_initialized = true;
+            state.publisher_period.start(PeriodId(10));
         }
 
         coordinator
@@ -106,8 +100,6 @@ mod tests {
             .unwrap();
 
         let state = coordinator.state.read().await;
-        assert_eq!(state.current_period_id, PeriodId(8));
-        assert_eq!(state.current_superblock_num, SuperblockNumber(51));
-        assert!(!state.period_initialized);
+        assert!(state.publisher_period.current().is_none());
     }
 }

@@ -2,15 +2,16 @@
 
 use std::collections::HashMap;
 
-use compose_primitives::{ChainId, InstanceId, PeriodId, SequenceNumber};
-use compose_proto::StartInstance;
+use ethera_spec::{chains_from_request, ChainId, Instance as SpecInstance};
+use ethera_spec_proto::StartInstance;
+use sidecar_primitives::InstanceId;
 use tracing::{debug, error, info, warn};
 
 use crate::coordinator::DefaultCoordinator;
 use crate::model::pending_xt::PendingXt;
 use crate::pipeline::delivery::build_sender_nonce_cache;
 use crate::pipeline::submission::xt_request_fingerprint;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 /// Maximum number of pending XTs before new submissions are rejected.
 const MAX_PENDING_XTS: usize = 100;
@@ -19,34 +20,51 @@ impl DefaultCoordinator {
     /// Process a new instance from the publisher. Validates the period and
     /// sequence, decodes transactions, and registers the XT.
     pub async fn handle_start_instance(&self, msg: &StartInstance) -> Result<(), CoordinatorError> {
-        let instance_id = InstanceId::from_publisher_bytes(&msg.instance_id);
-        let xt_request = msg
-            .xt_request
-            .as_ref()
-            .ok_or_else(|| CoordinatorError::Other("missing xt_request".to_string()))?;
+        let Some(proto_xt_request) = msg.xt_request.as_ref() else {
+            return Err(CoordinatorError::Other("missing xt_request".to_string()));
+        };
 
-        // Check if local chain participates.
-        let mut includes_local = false;
-        for req in &xt_request.transaction_requests {
-            let chain_id = ChainId(req.chain_id);
-            if chain_id == self.chain_id && !req.transaction.is_empty() {
-                includes_local = true;
-                break;
+        let xt_request = ethera_spec::XtRequest::from(proto_xt_request);
+        let fingerprint = xt_request_fingerprint(&xt_request);
+        let spec_instance = match SpecInstance::try_from(msg) {
+            Ok(instance) => instance,
+            Err(err) => {
+                let instance_id = InstanceId::from_publisher_bytes(&msg.instance_id);
+                let error = format!("invalid start-instance: {err}");
+                self.resolve_pending_submission(&fingerprint, Err(error.clone()))
+                    .await;
+                warn!(
+                    instance_id = %instance_id,
+                    period_id = msg.period_id,
+                    sequence = msg.sequence_number,
+                    error,
+                    "StartInstance rejected"
+                );
+                self.reject_start_instance(&instance_id, msg).await;
+                return Ok(());
             }
-        }
+        };
+
+        let instance_id = InstanceId::from_publisher_bytes(spec_instance.id.as_bytes());
+        let participant_chains = chains_from_request(&spec_instance.xt_request);
 
         // Decode transactions per chain.
         let mut raw_txs: HashMap<ChainId, Vec<Vec<u8>>> = HashMap::new();
-        for req in &xt_request.transaction_requests {
-            let chain_id = ChainId(req.chain_id);
-            for tx_bytes in &req.transaction {
-                raw_txs.entry(chain_id).or_default().push(tx_bytes.clone());
+        for req in &spec_instance.xt_request.transactions {
+            for tx_bytes in &req.transactions {
+                raw_txs
+                    .entry(req.chain_id)
+                    .or_default()
+                    .push(tx_bytes.clone());
             }
         }
 
+        let includes_local = participant_chains.contains(&self.chain_id)
+            && raw_txs
+                .get(&self.chain_id)
+                .is_some_and(|txs| !txs.is_empty());
         let sender_nonces = build_sender_nonce_cache(&raw_txs);
 
-        let fingerprint = xt_request_fingerprint(xt_request);
         let mut state = self.state.write().await;
 
         if state.pending.contains_key(&instance_id) {
@@ -71,65 +89,28 @@ impl DefaultCoordinator {
             return Err(CoordinatorError::TooManyPendingInstances(MAX_PENDING_XTS));
         }
 
-        if !state.period_initialized {
+        let msg_period = spec_instance.period_id;
+        let msg_seq = spec_instance.sequence_number;
+        if let Err(err) = state
+            .publisher_period
+            .accept_start_instance(msg_period, msg_seq)
+        {
             drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(CoordinatorError::PeriodNotInitialized.to_string()),
-            )
-            .await;
-            warn!(instance_id = %instance_id, "Period not initialized, rejecting");
+            self.resolve_pending_submission(&fingerprint, Err(err.to_string()))
+                .await;
+            warn!(
+                instance_id = %instance_id,
+                period_id = msg.period_id,
+                sequence = msg.sequence_number,
+                error = %err,
+                "StartInstance rejected"
+            );
             self.reject_start_instance(&instance_id, msg).await;
             return Ok(());
         }
 
-        let msg_period = PeriodId(msg.period_id);
-        let current_period = state.current_period_id;
-        if msg_period < current_period {
-            drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(format!(
-                    "publisher start-instance rejected: stale period {} < current {}",
-                    msg_period.0, current_period.0
-                )),
-            )
-            .await;
-            warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Stale period, rejecting");
-            self.reject_start_instance(&instance_id, msg).await;
-            return Ok(());
-        }
-        if msg_period > current_period {
-            drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(format!(
-                    "publisher start-instance rejected: future period {} > current {}",
-                    msg_period.0, current_period.0
-                )),
-            )
-            .await;
-            warn!(instance_id = %instance_id, msg_period = msg_period.0, current_period = current_period.0, "Future period (last block still building), rejecting");
-            self.reject_start_instance(&instance_id, msg).await;
-            return Ok(());
-        }
-
-        let msg_seq = SequenceNumber(msg.sequence_number);
-        if msg_seq <= state.last_sequence_num {
-            drop(state);
-            self.resolve_pending_submission(
-                &fingerprint,
-                Err(CoordinatorError::StaleSequence.to_string()),
-            )
-            .await;
-            warn!(instance_id = %instance_id, "Stale sequence, rejecting");
-            self.reject_start_instance(&instance_id, msg).await;
-            return Ok(());
-        }
-
-        state.last_sequence_num = msg_seq;
-
-        let mut xt = PendingXt::new(instance_id.to_string(), msg.instance_id.clone());
+        let raw_instance_id = spec_instance.id.as_bytes().to_vec();
+        let mut xt = PendingXt::new(instance_id.to_string(), raw_instance_id.clone());
         xt.period_id = msg_period;
         xt.sequence_num = msg_seq;
         xt.raw_txs = raw_txs;
@@ -142,11 +123,11 @@ impl DefaultCoordinator {
 
         state
             .mailbox_index
-            .insert(msg.instance_id.clone(), instance_id.clone());
+            .insert(raw_instance_id.clone(), instance_id.clone());
         state.pending.insert(instance_id.clone(), xt);
 
         // Drain messages that arrived before the XT was registered (race window).
-        let buffered = state.drain_mailbox_buffer(&msg.instance_id);
+        let buffered = state.drain_mailbox_buffer(&raw_instance_id);
         if !buffered.is_empty() {
             if let Some(pending_xt) = state.pending.get_mut(&instance_id) {
                 debug!(
@@ -229,14 +210,17 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::{ChainId, PeriodId};
-    use compose_proto::{StartInstance, TransactionRequest, XtRequest};
+    use ethera_spec::{ChainId, PeriodId};
+    use ethera_spec_proto::{StartInstance, TransactionRequest, XtRequest};
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
 
     fn start_instance(sequence_number: u64) -> StartInstance {
+        let mut instance_id = [0_u8; 32];
+        instance_id[24..].copy_from_slice(&sequence_number.to_be_bytes());
+
         StartInstance {
-            instance_id: format!("xt-{sequence_number}").into_bytes(),
+            instance_id: instance_id.to_vec(),
             period_id: 1,
             sequence_number,
             xt_request: Some(XtRequest {
@@ -245,6 +229,13 @@ mod tests {
                     transaction: vec![vec![sequence_number as u8]],
                 }],
             }),
+        }
+    }
+
+    fn start_instance_for_period(period_id: u64, sequence_number: u64) -> StartInstance {
+        StartInstance {
+            period_id,
+            ..start_instance(sequence_number)
         }
     }
 
@@ -263,8 +254,7 @@ mod tests {
 
         {
             let mut state = coordinator.state.write().await;
-            state.period_initialized = true;
-            state.current_period_id = PeriodId(1);
+            state.publisher_period.start(PeriodId(1));
         }
 
         coordinator
@@ -278,6 +268,154 @@ mod tests {
 
         let state = coordinator.state.read().await;
         assert_eq!(state.pending.len(), 2);
-        assert_eq!(state.last_sequence_num.0, 2);
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_non_advancing_sequence() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(1));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance(2))
+            .await
+            .unwrap();
+
+        // A fresh instance reusing sequence 2 is rejected by the watermark.
+        let mut replay = start_instance(2);
+        replay.instance_id = [0xff; 32].to_vec();
+        coordinator.handle_start_instance(&replay).await.unwrap();
+
+        let state = coordinator.state.read().await;
+        assert_eq!(state.pending.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_malformed_instance_id() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(1));
+        }
+
+        let mut malformed = start_instance(1);
+        malformed.instance_id = b"not-32-bytes".to_vec();
+
+        coordinator.handle_start_instance(&malformed).await.unwrap();
+
+        let state = coordinator.state.read().await;
+        assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_period_before_start_period() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        coordinator
+            .handle_start_instance(&start_instance(1))
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_rejects_stale_and_future_periods() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(10));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance_for_period(9, 1))
+            .await
+            .unwrap();
+        coordinator
+            .handle_start_instance(&start_instance_for_period(11, 2))
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert!(state.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_start_instance_resets_sequence_on_new_period() {
+        let coordinator = DefaultCoordinator::new(
+            ChainId(77777),
+            None,
+            None,
+            None,
+            None,
+            None,
+            1000,
+            VerificationConfig::default(),
+        );
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(1));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance(3))
+            .await
+            .unwrap();
+
+        {
+            let mut state = coordinator.state.write().await;
+            state.publisher_period.start(PeriodId(2));
+        }
+
+        coordinator
+            .handle_start_instance(&start_instance_for_period(2, 1))
+            .await
+            .unwrap();
+
+        let state = coordinator.state.read().await;
+        assert_eq!(state.pending.len(), 2);
     }
 }

@@ -1,10 +1,10 @@
 //! Inbound mailbox message handling and state updates.
 
-use compose_proto::MailboxMessage;
+use ethera_spec_proto::MailboxMessage;
 use tracing::{debug, warn};
 
 use crate::coordinator::DefaultCoordinator;
-use compose_primitives_traits::CoordinatorError;
+use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
     /// Handle an incoming CIRC message from a peer sidecar.
@@ -66,8 +66,8 @@ impl DefaultCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use compose_primitives::ChainId;
-    use compose_proto::MailboxMessage;
+    use ethera_spec::ChainId;
+    use ethera_spec_proto::MailboxMessage;
 
     use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::pending_xt::PendingXt;
@@ -117,7 +117,7 @@ mod tests {
                 &instance_id,
                 HashMap::from([(ChainId(88888), vec![vec![1]])]),
                 ChainId(77777),
-                compose_primitives::SequenceNumber(1),
+                ethera_spec::SequenceNumber(1),
             )
             .await
             .unwrap();

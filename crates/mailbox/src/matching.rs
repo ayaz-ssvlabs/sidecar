@@ -1,8 +1,9 @@
 //! Matching helpers between dependencies and mailbox messages.
 
 use alloy::primitives::{Address, U256};
-use compose_primitives::{ChainId, CrossRollupDependency, CrossRollupMessage};
-use compose_proto::MailboxMessage;
+use ethera_spec::ChainId;
+use ethera_spec_proto::MailboxMessage;
+use sidecar_primitives::{CrossRollupDependency, CrossRollupMessage};
 
 use crate::wire;
 

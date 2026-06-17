@@ -1,19 +1,20 @@
 [workspace.package]
 edition = "2021"
 rust-version = "1.91"
-license = "MIT"
+license = "GPL-3.0-only"
 
 [workspace]
 members = [
     "bin/sidecar",
     "crates/primitives",
     "crates/primitives-traits",
-    "crates/proto",
     "crates/config",
     "crates/net/transport",
     "crates/net/peer",
     "crates/net/publisher",
+    "crates/net/ws",
     "crates/mailbox",
+    "crates/permissions",
     "crates/simulation",
     "crates/metrics",
     "crates/coordinator/coordinator",
@@ -23,20 +24,24 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# compose
-compose-primitives = { path = "crates/primitives" }
-compose-primitives-traits = { path = "crates/primitives-traits" }
-compose-proto = { path = "crates/proto" }
-compose-config = { path = "crates/config" }
-compose-transport = { path = "crates/net/transport" }
-compose-peer = { path = "crates/net/peer" }
-compose-publisher = { path = "crates/net/publisher" }
-compose-mailbox = { path = "crates/mailbox" }
-compose-simulation = { path = "crates/simulation" }
-compose-coordinator = { path = "crates/coordinator/coordinator" }
-compose-server = { path = "crates/coordinator/server" }
-compose-metrics = { path = "crates/metrics" }
-compose-tracing = { path = "crates/tracing" }
+# Internal crates
+sidecar-primitives = { path = "crates/primitives" }
+sidecar-primitives-traits = { path = "crates/primitives-traits" }
+sidecar-config = { path = "crates/config" }
+sidecar-transport = { path = "crates/net/transport" }
+sidecar-peer = { path = "crates/net/peer" }
+sidecar-publisher = { path = "crates/net/publisher" }
+sidecar-ws = { path = "crates/net/ws" }
+sidecar-mailbox = { path = "crates/mailbox" }
+sidecar-permissions = { path = "crates/permissions" }
+sidecar-simulation = { path = "crates/simulation" }
+sidecar-coordinator = { path = "crates/coordinator/coordinator" }
+sidecar-server = { path = "crates/coordinator/server" }
+sidecar-metrics = { path = "crates/metrics" }
+sidecar-tracing = { path = "crates/tracing" }
+
+ethera-spec = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec", features = ["serde"] }
+ethera-spec-proto = { git = "https://github.com/ethera-labs/specs.git", branch = "feat/compose-rs", package = "ethera-spec-proto" }
 
 # Async
 tokio = { version = "1.43", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
@@ -89,6 +94,8 @@ hex = "0.4"
 bytes = "1.0"
 prometheus-client = "0.22"
 socket2 = "0.5"
+arc-swap = "1.7"
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"
