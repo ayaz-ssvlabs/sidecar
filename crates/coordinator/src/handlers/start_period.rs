@@ -9,7 +9,7 @@ use sidecar_primitives_traits::CoordinatorError;
 impl DefaultCoordinator {
     /// Handle a new period from the publisher. Aborts any stale undecided
     /// instances from prior periods and sends abort votes to the publisher
-    /// so it can complete the 2PC for those instances.
+    /// so it can finish deciding those instances.
     pub async fn handle_start_period(
         &self,
         period_id: PeriodId,
@@ -65,7 +65,7 @@ impl DefaultCoordinator {
         }
 
         // Notify the publisher of the abort for each stale XT so it can
-        // complete the 2PC round and unblock the next period's instances.
+        // finish the decision round and unblock the next period's instances.
         if !aborted_instance_ids.is_empty() {
             if let Some(publisher) = &self.publisher {
                 if publisher.is_connected() {

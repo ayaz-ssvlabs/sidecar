@@ -31,7 +31,7 @@ impl DefaultCoordinator {
     /// In standalone mode, compute whether the instance can be decided from the
     /// currently known local and peer votes.
     ///
-    /// Rules are aligned with SCP/2PC docs:
+    /// Decision rules:
     /// - any `false` vote decides `false` immediately;
     /// - `true` is decided only when all expected votes are collected.
     pub(crate) fn maybe_make_standalone_decision(
