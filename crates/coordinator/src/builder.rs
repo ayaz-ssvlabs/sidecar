@@ -16,7 +16,7 @@ use sidecar_primitives_traits::{
 use sidecar_permissions::PermissionEngine;
 use sidecar_webhook::WebhookClient;
 
-use crate::coordinator::{DefaultCoordinator, VerificationConfig};
+use crate::{DefaultCoordinator, VerificationConfig};
 
 /// Builder for constructing a [`DefaultCoordinator`] with all its dependencies.
 pub struct CoordinatorBuilder {

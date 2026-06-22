@@ -9,7 +9,7 @@ use prometheus_client::registry::Registry;
 use sidecar_config::SidecarArgs;
 use sidecar_coordinator::builder::CoordinatorBuilder;
 use sidecar_coordinator::builder_client::HttpXtBuilderClient;
-use sidecar_coordinator::coordinator::{DefaultCoordinator, VerificationConfig};
+use sidecar_coordinator::{DefaultCoordinator, VerificationConfig};
 use sidecar_mailbox::put_inbox::PutInboxTxBuilder;
 use sidecar_mailbox::queue::InMemoryQueue;
 use sidecar_metrics::SidecarMetrics;

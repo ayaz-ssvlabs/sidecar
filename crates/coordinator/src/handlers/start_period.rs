@@ -3,7 +3,7 @@
 use ethera_spec::{PeriodId, SuperblockNumber};
 use tracing::{error, info};
 
-use crate::coordinator::DefaultCoordinator;
+use crate::DefaultCoordinator;
 use sidecar_primitives_traits::CoordinatorError;
 
 impl DefaultCoordinator {
@@ -87,8 +87,8 @@ mod tests {
     use ethera_spec::ChainId;
 
     use super::*;
-    use crate::coordinator::VerificationConfig;
     use crate::model::pending_xt::PendingXt;
+    use crate::VerificationConfig;
 
     #[tokio::test]
     async fn decided_committed_xt_keeps_reservation_at_rollover() {

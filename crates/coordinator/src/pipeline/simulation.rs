@@ -14,8 +14,8 @@ use sidecar_primitives::{CrossRollupDependency, CrossRollupMessage, StateOverrid
 use tokio::time::{sleep_until, Instant};
 use tracing::{debug, error, info, warn};
 
-use crate::coordinator::DefaultCoordinator;
 use crate::model::chain_overlay::ChainOverlay;
+use crate::DefaultCoordinator;
 
 #[derive(Debug, Serialize)]
 struct VerificationPayload<'a> {
@@ -660,9 +660,9 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tokio::{net::TcpListener, task::JoinHandle};
 
-    use crate::coordinator::{DefaultCoordinator, VerificationConfig};
     use crate::model::chain_overlay::ChainOverlay;
     use crate::model::pending_xt::PendingXt;
+    use crate::{DefaultCoordinator, VerificationConfig};
 
     #[derive(Clone)]
     struct VerificationServerState {
