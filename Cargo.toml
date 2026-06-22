@@ -13,6 +13,7 @@ members = [
     "crates/net/peer",
     "crates/net/publisher",
     "crates/net/ws",
+    "crates/net/webhook",
     "crates/mailbox",
     "crates/permissions",
     "crates/simulation",
@@ -32,6 +33,7 @@ sidecar-transport = { path = "crates/net/transport" }
 sidecar-peer = { path = "crates/net/peer" }
 sidecar-publisher = { path = "crates/net/publisher" }
 sidecar-ws = { path = "crates/net/ws" }
+sidecar-webhook = { path = "crates/net/webhook" }
 sidecar-mailbox = { path = "crates/mailbox" }
 sidecar-permissions = { path = "crates/permissions" }
 sidecar-simulation = { path = "crates/simulation" }

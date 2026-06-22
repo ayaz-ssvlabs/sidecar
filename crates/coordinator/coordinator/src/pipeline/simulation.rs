@@ -329,6 +329,7 @@ impl DefaultCoordinator {
             if let sidecar_permissions::Decision::Deny(reason) =
                 engine.evaluate_xt(sender, self.chain_id, &involved)
             {
+                self.record_xt_denial(sender, reason, instance_id.to_string());
                 return Err(reason.as_str());
             }
         }
